@@ -6,6 +6,7 @@ definitions stay identical between architectures.
 
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin
 
 CATEGORICAL_COLS = ['Store', 'Dept', 'Type']
 
@@ -176,3 +177,49 @@ def build_features(df, features, stores, history_df=None, is_train=True):
         out = out.drop(columns=['Weekly_Sales'])
 
     return out.sort_values(['Store', 'Dept', 'Date']).reset_index(drop=True)
+
+
+class FeatureEngineeringTransformer(BaseEstimator, TransformerMixin):
+    """Wraps build_features (merge + calendar + lag + rolling) as a Pipeline step.
+
+    Bakes in features.csv/stores.csv at construction time and, once fit, the
+    full raw training history — so a fitted pipeline's transform()/predict()
+    can be called on bare Store/Dept/Date/IsHoliday rows (e.g. test.csv,
+    unmerged, un-featurized) with no manual preprocessing by the caller.
+
+    Whether a call is a training-time pass (has its own Weekly_Sales, safe to
+    treat as self-contained series history) or a genuine future-prediction
+    pass (no Weekly_Sales, needs the stored history for lag/rolling context)
+    is inferred from whether 'Weekly_Sales' is present in X — this mirrors
+    build_features' own is_train/history_df contract.
+    """
+
+    def __init__(self, features, stores):
+        self.features = features
+        self.stores = stores
+
+    def fit(self, X, y=None):
+        self.history_df_ = X.copy()
+        return self
+
+    def transform(self, X):
+        is_train = 'Weekly_Sales' in X.columns
+        history_df = None if is_train else self.history_df_
+        return build_features(X, self.features, self.stores, history_df=history_df, is_train=is_train)
+
+
+class FeatureSelector(BaseEstimator, TransformerMixin):
+    """Subsets to the feature columns chosen in feature selection, casting bool columns to int for LightGBM."""
+
+    def __init__(self, feature_names):
+        self.feature_names = feature_names
+
+    def fit(self, X, y=None):
+        self.selected_features_ = list(self.feature_names)
+        return self
+
+    def transform(self, X):
+        X = X[self.selected_features_].copy()
+        for c in X.select_dtypes(include='bool').columns:
+            X[c] = X[c].astype(int)
+        return X
