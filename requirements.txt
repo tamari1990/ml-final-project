@@ -1,3 +1,5 @@
+alembic==1.18.5
+colorlog==6.11.0
 dagshub==0.7.1
 dagshub-annotation-converter==0.2.1
 ipykernel==7.3.0
@@ -22,7 +24,17 @@ mlflow==3.14.0
 mlflow-skinny==3.14.0
 mlflow-tracing==3.14.0
 numpy==2.5.1
+optuna==4.9.0
+optuna-integration==4.9.0
 pandas==2.3.3
+patsy==1.0.2
 scikit-learn==1.9.0
 seaborn==0.13.2
+SQLAlchemy==2.0.51
+statsmodels==0.14.6
+tqdm==4.69.0
 xgboost==3.3.0
+
+# CPU-only PyTorch (N-BEATS). Install via:
+#   pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+torch==2.13.0

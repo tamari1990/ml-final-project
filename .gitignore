@@ -10,3 +10,11 @@ __pycache__/
 .venv/
 .venv-dlinear/
 venv/
+
+# N-BEATS HPO run artifacts (local, regenerable)
+nbeats_optuna.db
+nbeats_hpo_run.log
+nbeats_finalize_run.log
+models/*.pt
+mlruns/
+mlflow.db
