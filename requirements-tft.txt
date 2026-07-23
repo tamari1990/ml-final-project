@@ -1,0 +1,18 @@
+# For model_experiment_TFT.ipynb, run on Colab (GPU required — see the
+# notebook's intro for why). Not meant for a local venv the way
+# requirements-dlinear.txt is: this notebook was validated with a throwaway
+# CPU environment (structural/API correctness only, not performance), and
+# is designed to actually run on Colab.
+#
+# In a fresh Colab cell, before running the notebook:
+#
+#   !pip install -q pytorch-forecasting lightning
+#
+# Colab already has a compatible torch + CUDA build preinstalled; do not
+# reinstall torch there. Versions below are what this notebook's logic was
+# validated against locally (Python 3.11, CPU):
+pytorch-forecasting==1.8.0
+lightning==2.6.5
+torch==2.2.2
+pandas==3.0.5
+numpy==1.26.4
