@@ -1,0 +1,20 @@
+# Separate from requirements.txt: torch has no wheel yet for the Python
+# version requirements.txt/.venv target, so this notebook's environment
+# needs its own venv on an earlier Python (3.11 here) instead.
+#
+#   /usr/local/bin/python3.11 -m venv .venv-dlinear
+#   source .venv-dlinear/bin/activate
+#   pip install -r requirements-dlinear.txt
+#   python -m ipykernel install --user --name=ml-final-project-torch \
+#       --display-name="ml-final-project (torch, .venv-dlinear)"
+#
+# numpy is pinned <2 because this torch build requires it, unlike
+# requirements.txt's numpy==2.5.1.
+dagshub==0.7.1
+dagshub-annotation-converter==0.2.1
+ipykernel==7.3.0
+matplotlib==3.11.1
+mlflow==3.14.0
+numpy==1.26.4
+pandas==2.3.3
+torch==2.2.2
