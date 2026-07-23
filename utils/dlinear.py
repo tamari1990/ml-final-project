@@ -114,7 +114,11 @@ def build_full_calendar_panel(df):
     full = grid.merge(df[cols], on=['Store', 'Dept', 'Date'], how='left')
     full['Weekly_Sales'] = full['Weekly_Sales'].fillna(0.0)
     if 'IsHoliday' in full.columns:
-        full['IsHoliday'] = full['IsHoliday'].fillna(False)
+        # .where(), not .fillna() — .fillna() on this object-dtype column (a mix
+        # of real True/False and NaN from the left-merge) hits pandas' deprecated
+        # silent-downcast-after-fillna path and raises a FutureWarning; .where()
+        # doesn't share that codepath.
+        full['IsHoliday'] = full['IsHoliday'].where(full['IsHoliday'].notna(), False).astype(bool)
     else:
         full['IsHoliday'] = False
     return full.sort_values(['Store', 'Dept', 'Date']).reset_index(drop=True)
