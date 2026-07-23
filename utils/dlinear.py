@@ -10,13 +10,20 @@ this dataset specifically:
   each (Store, Dept) series treated as a batch sample rather than a channel.
   A single linear map generalizes across all ~3300 series instead of fitting
   one model per series or per store.
-- The horizon's future `IsHoliday` flag (known in advance — it's a calendar
-  fact, not something to forecast) is concatenated onto both linear layers'
-  input. Thanksgiving/Christmas weeks are the hardest to predict and the
-  most heavily weighted (5x) in WMAE, so giving the model direct, explicit
-  access to "is this output week a holiday" — rather than hoping it infers
-  yearly seasonality purely from `lag52`-equivalent history — is the single
-  biggest lever available without abandoning DLinear's linear simplicity.
+- The horizon's future `IsHoliday` flag plus a cyclical week-of-year encoding
+  (both known in advance — calendar facts, not something to forecast) are
+  concatenated onto both linear layers' input. `IsHoliday` targets
+  Thanksgiving/Christmas specifically (the hardest weeks, 5x WMAE weight);
+  week-of-year targets everything else with a recurring-but-not-flagged
+  calendar pattern — Easter being the clearest example found in this
+  project's own holdout plots (a real, visible demand spike with no
+  `IsHoliday` flag, since Kaggle only tracks the 4 named holidays). Week-of-
+  year is a soft, not exact, fix for Easter specifically — its calendar date
+  drifts by weeks year to year, so the model can only learn "a bump tends to
+  happen somewhere in this range," not pin it exactly — but it also gives
+  general seasonal awareness the model had no access to before (the tree
+  notebooks' `WeekOfYear` was a top-20 selected feature; this DLinear had no
+  calendar-position input at all until now).
 
 Requires torch. Not a dependency of utils/feature_engineering.py or
 utils/metrics.py, and not imported by the LightGBM/XGBoost notebooks —
@@ -65,12 +72,15 @@ class SeriesDecomp(nn.Module):
 
 
 class DLinear(nn.Module):
-    """Shared-weight DLinear with an auxiliary future-holiday input.
+    """Shared-weight DLinear with an auxiliary future-calendar input.
 
     forward(target_hist, aux):
         target_hist: (batch, lookback, 1) — normalized sales history.
-        aux: (batch, horizon) or None — future IsHoliday flags (0/1) for the
-             block being predicted, known in advance.
+        aux: (batch, horizon * 3) or None — future covariates for the block
+             being predicted, known in advance: horizon IsHoliday flags,
+             then horizon week-of-year sin values, then horizon week-of-year
+             cos values (this fixed order — see build_aux_features — must
+             match between training windows and inference).
     Returns (batch, horizon) — normalized sales forecast for the block.
     """
 
@@ -124,6 +134,26 @@ def build_full_calendar_panel(df):
     return full.sort_values(['Store', 'Dept', 'Date']).reset_index(drop=True)
 
 
+def week_of_year_sin_cos(dates):
+    """Cyclical (sin, cos) encoding of ISO week-of-year, period 52 — a plain
+    integer week-of-year would make week 52 and week 1 look maximally far
+    apart to a linear model, when they're calendar-adjacent."""
+    woy = pd.to_datetime(pd.Series(dates)).dt.isocalendar().week.to_numpy(dtype=np.float32)
+    angle = 2 * np.pi * woy / 52.0
+    return np.sin(angle).astype(np.float32), np.cos(angle).astype(np.float32)
+
+
+def build_aux_features(holiday_arr, dates_arr):
+    """Flat (horizon*3,) future-covariate vector for one block: [IsHoliday...,
+    week_sin..., week_cos...], in this fixed concatenation order — the single
+    source of truth both SeriesWindowDataset (training windows) and
+    recursive_forecast (inference) build aux vectors through, so the two
+    can never silently drift into different layouts."""
+    sin, cos = week_of_year_sin_cos(dates_arr)
+    holiday = np.asarray(holiday_arr, dtype=np.float32)
+    return np.concatenate([holiday, sin, cos]).astype(np.float32)
+
+
 def compute_series_stats(panel):
     """Per-(Store, Dept) mean/std of Weekly_Sales, for z-score normalization.
 
@@ -167,25 +197,27 @@ class SeriesWindowDataset(Dataset):
         self.lookback = lookback
         self.horizon = horizon
         self.samples = []
-        for key, (sales, holiday, _dates) in series_arrays.items():
+        for key, (sales, holiday, dates) in series_arrays.items():
             mean, std = series_stats[key]
             sales_norm = (sales - mean) / std
             n = len(sales_norm)
             for start in range(0, n - lookback - horizon + 1):
                 hist = sales_norm[start:start + lookback]
                 fut_holiday = holiday[start + lookback: start + lookback + horizon]
+                fut_dates = dates[start + lookback: start + lookback + horizon]
+                aux = build_aux_features(fut_holiday, fut_dates)
                 target = sales_norm[start + lookback: start + lookback + horizon]
-                self.samples.append((hist, fut_holiday, target))
+                self.samples.append((hist, aux, target))
         self.holiday_weight = holiday_weight
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        hist, fut_holiday, target = self.samples[idx]
+        hist, aux, target = self.samples[idx]
         return (
             torch.from_numpy(hist.copy()).float().unsqueeze(-1),
-            torch.from_numpy(fut_holiday.copy()).float(),
+            torch.from_numpy(aux.copy()).float(),
             torch.from_numpy(target.copy()).float(),
         )
 
@@ -198,7 +230,7 @@ def weighted_mae_loss(pred, target, is_holiday, holiday_weight=5.0):
     return (weights * (pred - target).abs()).sum() / weights.sum()
 
 
-def recursive_forecast(model, hist_norm, future_holiday, lookback, horizon, n_blocks, device='cpu'):
+def recursive_forecast(model, hist_norm, future_holiday, future_dates, lookback, horizon, n_blocks, device='cpu'):
     """Chain n_blocks direct-horizon predictions to cover n_blocks * horizon
     future weeks, feeding each block's own predictions back in as history
     for the next block (autoregressive at the block level — the model
@@ -207,6 +239,9 @@ def recursive_forecast(model, hist_norm, future_holiday, lookback, horizon, n_bl
 
     hist_norm: 1D array, length >= lookback (normalized). future_holiday:
     1D array, length horizon * n_blocks (raw 0/1, known in advance).
+    future_dates: 1D array, length horizon * n_blocks, matching
+    future_holiday elementwise — used to build the week-of-year aux features
+    (see build_aux_features) for each block.
     Returns a 1D np.array of length horizon * n_blocks, normalized scale.
     """
     model.eval()
@@ -215,9 +250,10 @@ def recursive_forecast(model, hist_norm, future_holiday, lookback, horizon, n_bl
     with torch.no_grad():
         for b in range(n_blocks):
             hist_t = torch.tensor(buffer[-lookback:], dtype=torch.float32, device=device).view(1, lookback, 1)
-            aux_t = torch.tensor(
-                future_holiday[b * horizon:(b + 1) * horizon], dtype=torch.float32, device=device
-            ).view(1, horizon)
+            block_holiday = future_holiday[b * horizon:(b + 1) * horizon]
+            block_dates = future_dates[b * horizon:(b + 1) * horizon]
+            aux = build_aux_features(block_holiday, block_dates)
+            aux_t = torch.tensor(aux, dtype=torch.float32, device=device).view(1, -1)
             block_pred = model(hist_t, aux_t).squeeze(0).cpu().numpy()
             preds.extend(block_pred.tolist())
             buffer.extend(block_pred.tolist())
@@ -276,7 +312,8 @@ class DLinearForecastPipeline:
 
             hist_norm = (sales[-self.lookback:] - mean) / std
             preds_norm = recursive_forecast(
-                self.model, hist_norm, future_holiday, self.lookback, self.horizon, n_blocks, self.device
+                self.model, hist_norm, future_holiday, future_calendar.to_numpy(),
+                self.lookback, self.horizon, n_blocks, self.device,
             )
             preds_raw = np.clip(preds_norm * std + mean, 0, None)
             for d, p in zip(future_calendar, preds_raw):
