@@ -111,7 +111,7 @@ def make_training_dataset(panel, max_encoder_length, max_prediction_length, min_
         static_reals=STATIC_REALS,
         time_varying_known_reals=TIME_VARYING_KNOWN_REALS,
         time_varying_unknown_reals=TIME_VARYING_UNKNOWN_REALS,
-        target_normalizer=GroupNormalizer(groups=['Store', 'Dept'], transformation='softplus'),
+        target_normalizer=GroupNormalizer(groups=['Store', 'Dept']),
         weight='sample_weight',
         add_relative_time_idx=True,
         add_target_scales=True,
