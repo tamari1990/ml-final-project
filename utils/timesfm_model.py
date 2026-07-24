@@ -47,7 +47,8 @@ from utils.dlinear import build_full_calendar_panel, series_arrays_from_panel
 __all__ = [
     'build_full_calendar_panel', 'series_arrays_from_panel',
     'load_timesfm', 'min_context_length', 'forecast_series',
-    'TimesFMForecastPipeline', 'CHECKPOINT', 'PATCH_LEN',
+    'recursive_forecast_series', 'TimesFMForecastPipeline',
+    'CHECKPOINT', 'PATCH_LEN',
 ]
 
 CHECKPOINT = 'google/timesfm-2.5-200m-pytorch'
@@ -131,6 +132,54 @@ def forecast_series(model, contexts, horizon, batch_size=256):
         points.append(np.asarray(point))
         quantiles_list.append(np.asarray(quantiles))
     return np.concatenate(points, axis=0), np.concatenate(quantiles_list, axis=0)
+
+
+def recursive_forecast_series(model, contexts, total_horizon, block_size, batch_size=256):
+    """Forecasts total_horizon weeks ahead by repeatedly forecasting
+    block_size weeks at a time and appending each block's own point
+    forecast onto the context before forecasting the next block — unlike
+    forecast_series's single direct call for the whole horizon at once.
+
+    Motivation: a single direct 52-week-ahead forecast has no calendar
+    signal at all (this module deliberately uses no covariates — see the
+    module docstring), so its point forecast for a far-future week can't
+    know whether that week is Thanksgiving or an ordinary one, and tends
+    toward a damped, mean-reverting trajectory instead of the actual
+    holiday spikes (found empirically: local-test holdout WMAE 2618.40 at
+    horizon=52 direct, vs. ~1716-1810 at horizon=13 direct during CV).
+    Recursive block-wise forecasting doesn't fix the missing-calendar-
+    signal problem either (still zero covariates), but each individual
+    block only has to commit to a much shorter, less phase-uncertain
+    horizon, which is worth testing as a cheap alternative to adding
+    covariates outright.
+
+    Only meaningfully different from forecast_series when
+    total_horizon > block_size — with a single block, it's one direct
+    call, identical to forecast_series (verified in validation).
+
+    Returns point forecasts only, shape (n_series, total_horizon) — unlike
+    forecast_series, no quantiles: each block's quantiles are relative to
+    that block's own (partly self-generated) context, not on a comparable
+    scale from block to block, so stacking them would be misleading.
+
+    Predictions are clipped to >=0 before being appended back as context,
+    same convention as every clip already applied at every prediction site
+    project-wide — an unclipped negative "phantom" value feeding back into
+    the next block's context would be a self-inflicted data quality bug.
+    """
+    n_blocks = int(np.ceil(total_horizon / block_size))
+    working_contexts = [np.asarray(c, dtype=np.float32).copy() for c in contexts]
+    blocks_per_series = [[] for _ in contexts]
+    remaining = total_horizon
+    for _ in range(n_blocks):
+        step_horizon = min(block_size, remaining)
+        point, _ = forecast_series(model, working_contexts, horizon=step_horizon, batch_size=batch_size)
+        point = np.clip(point, 0, None)
+        for i in range(len(working_contexts)):
+            blocks_per_series[i].append(point[i])
+            working_contexts[i] = np.concatenate([working_contexts[i], point[i]])
+        remaining -= step_horizon
+    return np.stack([np.concatenate(b) for b in blocks_per_series], axis=0)
 
 
 class TimesFMForecastPipeline:
