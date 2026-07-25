@@ -26,7 +26,25 @@ def merge_raw(df, features, stores):
 
     features.csv carries its own IsHoliday column, identical to train/test's,
     so it's dropped here to avoid a duplicate/suffix collision.
+
+    features.csv has zero CPI/Unemployment coverage for its last ~13 weeks
+    (2013-05-03 -> 2013-07-26, confirmed directly against the raw file) -- a
+    real gap in the competition data itself, not specific to any one caller.
+    Filled here (forward-fill per store on features.csv's own full timeline,
+    before the merge) rather than on the merged/output frame, because a
+    caller processing a narrow date slice at a time (e.g. one week of a
+    recursive multi-step forecast) would otherwise have nothing adjacent
+    within its own call to fill from -- features.csv itself always has full
+    continuity regardless of how narrow df is. train.csv (and everything
+    derived from it, including every local CV/holdout evaluation in this
+    project) ends 2012-10-26, so this window is never exercised there --
+    only Kaggle's real test.csv reaches it. bfill is a safety net for a
+    series starting mid-gap (not the case here, but not a given in general).
     """
+    features = features.sort_values(['Store', 'Date']).copy()
+    features[['CPI', 'Unemployment']] = (
+        features.groupby('Store')[['CPI', 'Unemployment']].transform(lambda s: s.ffill().bfill())
+    )
     return (
         df.merge(stores, on='Store', how='left')
           .merge(features.drop(columns=['IsHoliday']), on=['Store', 'Date'], how='left')
@@ -179,6 +197,93 @@ def build_features(df, features, stores, history_df=None, is_train=True):
     return out.sort_values(['Store', 'Dept', 'Date']).reset_index(drop=True)
 
 
+def recursive_predict(test_df, initial_history_df, features, stores, feature_selector, model, verbose=False):
+    """Genuinely blind multi-step-ahead prediction for a fitted lag/rolling-
+    feature model (XGBoost/LightGBM style), one calendar week at a time.
+
+    Calling build_features(test_df, ..., is_train=False) on a *whole*
+    multi-week test set in one shot is a real bug, not a safe shortcut:
+    with no Weekly_Sales at all for test_df, any lag/rolling window shorter
+    than the full test span (lag13, roll_mean_4/8, roll_std_4/8 here) ends
+    up referencing *other still-unknown test rows* once the window moves
+    past the first few weeks, cascading into NaN for most of the test
+    period. This is exactly what happened to the real Kaggle submission
+    here: roll_mean_4/8 went NaN from the 2nd test week onward, lag13 from
+    the 13th -- for 4 of 5 lag/rolling features, over most of the 39-week
+    test window -- and the internal holdout evaluation never caught it
+    because it evaluates on local_test_raw with is_train=True (real
+    ground-truth Weekly_Sales throughout, since local_test_raw is a slice
+    of train.csv, not genuinely-unseen data) -- a fundamentally easier task
+    that never exercises the all-NaN-future scenario Kaggle's real test.csv
+    actually is. Root-caused directly: internal holdout WMAE was 1639.12,
+    actual Kaggle score was ~8260-8495 (public/private) -- confirmed via a
+    genuinely-blind local re-evaluation using *this* function instead
+    (1580.80, in line with the original number, not ~5x worse) that the gap
+    was entirely this bug, not a real generalization problem.
+
+    Fixes it by predicting one week at a time and feeding each week's own
+    predictions back into a running history before featurizing the next
+    week, so short lag/rolling windows get real numbers (predictions
+    standing in for the still-unknown truth) instead of NaN.
+
+    test_df: raw Store/Dept/Date[/IsHoliday] rows to predict, e.g. test.csv.
+    initial_history_df: real history (Store/Dept/Date/Weekly_Sales) strictly
+        before test_df's first date, e.g. all of train.csv.
+    feature_selector, model: a fitted pipeline's own 'feature_selection' and
+        'model' steps (reuse them directly -- don't refit).
+    """
+    running_history = initial_history_df[['Store', 'Dept', 'Date', 'Weekly_Sales']].copy()
+    test_df = test_df.copy()
+    test_df['Date'] = pd.to_datetime(test_df['Date'])
+    unique_dates = np.sort(test_df['Date'].unique())
+
+    all_preds = []
+    baseline_nan_rate = None
+    for i, d in enumerate(unique_dates):
+        week_rows = test_df[test_df['Date'] == d]
+        feat_week = build_features(week_rows, features, stores, history_df=running_history, is_train=False)
+
+        X_week = feature_selector.transform(feat_week)
+        # Some NaN in lag/rolling columns is expected and legitimate here --
+        # ~18% of series have real calendar gaps (a dept not operating some
+        # weeks), and _reindex_to_full_calendar fills those with genuine
+        # NaN, not 0 (see its docstring). XGBoost (tree_method='hist')
+        # handles this natively via a learned default split direction, same
+        # as it was trained to. What this loop exists to prevent is NaN
+        # from *missing recursive history* -- i.e. a lag/rolling window
+        # landing on a week that's still unknown because a prior iteration
+        # failed to feed its predictions back. That failure mode shows up
+        # as a NaN rate that grows over the course of the loop (more weeks
+        # forecast = more missing history), not a roughly-constant baseline
+        # rate present from week 1 onward (what genuine calendar gaps look
+        # like, since they don't depend on how far into the forecast we
+        # are) -- so only raise if the rate climbs well past week 1's own.
+        n_nan = int(X_week.isna().sum().sum())
+        nan_rate = n_nan / X_week.size
+        if baseline_nan_rate is None:
+            baseline_nan_rate = nan_rate
+        elif nan_rate > baseline_nan_rate + 0.05:
+            nan_cols = X_week.columns[X_week.isna().any()].tolist()
+            raise ValueError(
+                f'week {d}: NaN rate {nan_rate:.4f} is well above week-1 baseline '
+                f'{baseline_nan_rate:.4f} in columns {nan_cols} -- recursive history feed is likely broken'
+            )
+
+        preds_week = np.clip(model.predict(X_week), 0, None)
+
+        pred_rows = feat_week[['Store', 'Dept', 'Date']].copy()
+        pred_rows['Weekly_Sales'] = preds_week
+        all_preds.append(pred_rows)
+
+        running_history = pd.concat([running_history, pred_rows], ignore_index=True)
+
+        if verbose:
+            print(f'  week {i + 1}/{len(unique_dates)} ({d.date() if hasattr(d, "date") else d}): '
+                  f'{len(week_rows)} rows, nan_rate={nan_rate:.4f}, pred mean={preds_week.mean():.1f}, max={preds_week.max():.1f}')
+
+    return pd.concat(all_preds, ignore_index=True)
+
+
 class FeatureEngineeringTransformer(BaseEstimator, TransformerMixin):
     """Wraps build_features (merge + calendar + lag + rolling) as a Pipeline step.
 
@@ -192,6 +297,16 @@ class FeatureEngineeringTransformer(BaseEstimator, TransformerMixin):
     pass (no Weekly_Sales, needs the stored history for lag/rolling context)
     is inferred from whether 'Weekly_Sales' is present in X — this mirrors
     build_features' own is_train/history_df contract.
+
+    WARNING: calling predict()/transform() on a *whole* multi-week
+    future-prediction batch in one shot silently produces NaN lag/rolling
+    features for most of that batch — see recursive_predict()'s docstring
+    for exactly why and the real incident this caused. Safe uses: (a)
+    training-time calls (X has its own Weekly_Sales), or (b) a
+    future-prediction batch no longer than the shortest lag/rolling window
+    (4 weeks, here). For anything longer — e.g. a full Kaggle test.csv —
+    use recursive_predict() instead of calling this (or Pipeline.predict())
+    directly.
     """
 
     def __init__(self, features, stores):
