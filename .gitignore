@@ -9,7 +9,10 @@ __pycache__/
 # Environments
 .venv/
 .venv-dlinear/
+.venv-tft/
+.venv-timesfm/
 venv/
+lightning_logs/
 
 # N-BEATS HPO run artifacts (local, regenerable)
 nbeats_optuna.db

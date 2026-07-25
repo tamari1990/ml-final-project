@@ -6,7 +6,7 @@
 #
 # In a fresh Colab cell, before running the notebook:
 #
-#   !pip install -q pytorch-forecasting lightning
+#   !pip install -q pytorch-forecasting lightning dagshub mlflow
 #
 # Colab already has a compatible torch + CUDA build preinstalled; do not
 # reinstall torch there. Versions below are what this notebook's logic was
@@ -14,5 +14,5 @@
 pytorch-forecasting==1.8.0
 lightning==2.6.5
 torch==2.2.2
-pandas==3.0.5
+pandas==2.3.3
 numpy==1.26.4

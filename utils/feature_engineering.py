@@ -18,6 +18,16 @@ HOLIDAY_DATES = {
     'LaborDay': ['2010-09-10', '2011-09-09', '2012-09-07', '2013-09-06'],
     'Thanksgiving': ['2010-11-26', '2011-11-25', '2012-11-23', '2013-11-29'],
     'Christmas': ['2010-12-31', '2011-12-30', '2012-12-28', '2013-12-27'],
+    # NOT part of Kaggle's official IsHoliday/scoring definition -- an extra
+    # feature-only flag for the week that actually contains the real
+    # pre-Christmas shopping peak, confirmed directly against train.csv:
+    # mean Weekly_Sales for 2010-12-24 was 27378.7 and for 2011-12-23 was
+    # 25437.1, both far above every other week including the officially
+    # labeled 'Christmas' week (2010-12-31: 13738.5, 2011-12-30: 15332.2,
+    # which is actually *below* the Thanksgiving week and close to an
+    # ordinary week -- it captures the post-holiday crash, not the peak).
+    # Exactly one week before each 'Christmas' date above.
+    'PreChristmas': ['2010-12-24', '2011-12-23', '2012-12-21', '2013-12-20'],
 }
 
 
@@ -216,10 +226,24 @@ def recursive_predict(test_df, initial_history_df, features, stores, feature_sel
     of train.csv, not genuinely-unseen data) -- a fundamentally easier task
     that never exercises the all-NaN-future scenario Kaggle's real test.csv
     actually is. Root-caused directly: internal holdout WMAE was 1639.12,
-    actual Kaggle score was ~8260-8495 (public/private) -- confirmed via a
-    genuinely-blind local re-evaluation using *this* function instead
-    (1580.80, in line with the original number, not ~5x worse) that the gap
-    was entirely this bug, not a real generalization problem.
+    actual Kaggle score was ~8260-8495 (public/private) -- confirmed this
+    was (mostly) the bug, not a real generalization problem, via a
+    genuinely-blind local re-evaluation using *this* function instead.
+
+    That first re-evaluation itself had a leakage bug worth documenting as
+    a cautionary example: it reused the already-saved *production* pipeline
+    (fit on all of train.csv, model.fit(train, ...)) and scored it against
+    local_test_raw -- but local_test_raw IS a slice of train.csv, so that
+    model had already seen those exact rows' real Weekly_Sales during its
+    own training. The result (1580.80, suspiciously close to the original
+    1639.12) was itself leaked, not a genuine holdout score. Corrected by
+    freshly training a model on local_train_raw only (which never overlaps
+    local_test_raw) before evaluating: genuinely-blind holdout WMAE is
+    2364.49 -- meaningfully higher than 1639.12, and a smaller, more
+    plausible gap to the real Kaggle score (2961.72 after the fix) than the
+    leaked 1580.80 suggested. Moral: recursive_predict() being "genuinely
+    blind" about the *forecast* doesn't make an evaluation genuinely blind
+    if the *model itself* was fit on the rows being scored -- check both.
 
     Fixes it by predicting one week at a time and feeding each week's own
     predictions back into a running history before featurizing the next
