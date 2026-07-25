@@ -1,0 +1,94 @@
+{
+  "best_generic": {
+    "trial": 23,
+    "config": {
+      "architecture": "generic",
+      "n_stacks": 2,
+      "n_blocks": 2,
+      "layer_size": 256,
+      "n_fc_layers": 4,
+      "lookback_multiplier": 4,
+      "loss": "smape",
+      "batch_size": 256,
+      "optimizer": "adam",
+      "learning_rate": 0.0007279854007274201,
+      "weight_decay": 3.822799078402829e-06,
+      "dropout": 0.19094568604860213,
+      "share_weights": false,
+      "trend_degree": 3
+    },
+    "cv_mean_wmae": 1911.095445291105,
+    "local_test_wmae_overall": 2161.25310772743,
+    "local_test_wmae_holiday": 3134.430956442924,
+    "local_test_wmae_non_holiday": 1756.1259226699472,
+    "local_test_wmae_by_type": {
+      "A": 2495.684571692365,
+      "B": 2003.3678912107828,
+      "C": 910.3641942846579
+    }
+  },
+  "best_interpretable": {
+    "trial": 4,
+    "config": {
+      "architecture": "interpretable",
+      "n_blocks": 2,
+      "layer_size": 512,
+      "n_fc_layers": 5,
+      "lookback_multiplier": 4,
+      "loss": "mae",
+      "batch_size": 1024,
+      "optimizer": "adam",
+      "learning_rate": 0.0010157001316706408,
+      "weight_decay": 5.973412665154223e-06,
+      "dropout": 0.18797923060380148,
+      "share_weights": true,
+      "trend_degree": 4
+    },
+    "cv_mean_wmae": 1902.3813188070403,
+    "local_test_wmae_overall": 2286.5106544054365,
+    "local_test_wmae_holiday": 3352.3521997380194,
+    "local_test_wmae_non_holiday": 1842.8082154855151,
+    "local_test_wmae_by_type": {
+      "A": 2646.1527168860102,
+      "B": 2113.3346235037384,
+      "C": 955.6731296576778
+    }
+  },
+  "ensemble_evaluable": {
+    "multipliers": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "n_members": 10,
+    "local_test_wmae_overall": 2331.7082837341713,
+    "local_test_wmae_holiday": 3502.224341115606,
+    "local_test_wmae_non_holiday": 1843.9441737946688,
+    "local_test_wmae_by_type": {
+      "A": 2675.318691442589,
+      "B": 2198.6789984867773,
+      "C": 908.2225128541684
+    }
+  },
+  "production_ensemble": {
+    "multipliers": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "base_config": "best_generic (trial 23)"
+  },
+  "hpo_search": {
+    "trials_requested": 80,
+    "trials_attempted": 30,
+    "trials_completed": 17,
+    "trials_pruned": 10,
+    "status": "paused, resumable from nbeats_optuna.db"
+  },
+  "source": "hybrid run: single fits + evaluable ensemble on Colab T4 GPU (nbeats_colab_finalize.py); production ensemble also completed on Colab"
+}

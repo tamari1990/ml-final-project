@@ -35,11 +35,17 @@ def build_objective(sales, is_holiday, cv_folds, max_epochs, patience):
         n_blocks = trial.suggest_int('n_blocks', 1, 4)
         n_fc_layers = trial.suggest_int('n_fc_layers', 2, 5)
         layer_size = trial.suggest_categorical('layer_size', [128, 256, 512])
-        # lookback_multiplier restricted to >=4 (>= 52 weeks = 1 full year, since
-        # HORIZON=13): members with a shorter lookback structurally can't contain
-        # the prior occurrence of a yearly holiday in their own window, so they're
-        # guessing blind on holiday weeks and just dilute the ensemble/HPO signal.
-        lookback_multiplier = trial.suggest_int('lookback_multiplier', 4, 7)
+        # Fixed at 4 (52 weeks = 1 full year, since HORIZON=13), not searched as a
+        # range: the CV folds are only 52/65/78 weeks (mirrors LightGBM exactly),
+        # so lookback_multiplier=4 is the ONLY value that ever satisfies the >=2
+        # valid-fold requirement below -- 5x/6x/7x always prune instantly
+        # regardless of any other hyperparameter, and shorter lookbacks (2x/3x)
+        # structurally can't contain the prior occurrence of a yearly holiday in
+        # their own window (the reason for this whole restriction). Searching a
+        # range here would waste the large majority of trials on guaranteed
+        # prunes; suggest_categorical (not a bare literal) keeps it visible in
+        # trial.params/MLflow like every other hyperparameter.
+        lookback_multiplier = trial.suggest_categorical('lookback_multiplier', [4])
         learning_rate = trial.suggest_float('learning_rate', 1e-4, 1e-2, log=True)
         batch_size = trial.suggest_categorical('batch_size', [256, 512, 1024])
         optimizer = trial.suggest_categorical('optimizer', ['adam', 'adamw'])
@@ -109,7 +115,7 @@ def main():
     parser.add_argument('--n-trials', type=int, default=60)
     parser.add_argument('--max-epochs', type=int, default=40)
     parser.add_argument('--patience', type=int, default=6)
-    parser.add_argument('--study-name', default='nbeats_hpo')
+    parser.add_argument('--study-name', default='nbeats_hpo_v2')
     parser.add_argument('--storage', default='sqlite:///nbeats_optuna.db')
     args = parser.parse_args()
 
@@ -146,7 +152,7 @@ def main():
             direction='minimize', study_name=args.study_name,
             storage=args.storage, load_if_exists=True,
         )
-        study.optimize(objective, n_trials=args.n_trials, callbacks=[mlflc])
+        study.optimize(objective, n_trials=args.n_trials, callbacks=[mlflc], catch=(Exception,))
 
         completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
         mlflow.log_metric('n_trials_completed', len(completed))

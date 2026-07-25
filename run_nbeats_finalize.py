@@ -30,7 +30,7 @@ from utils.nbeats_ensemble import (
 from utils.nbeats_train import HORIZON, forecast_series, local_split_idx, make_cv_folds, run_cv_for_config
 
 DATA_DIR = 'data/raw/walmart-recruiting-store-sales-forecasting/'
-STUDY_NAME = 'nbeats_hpo'
+STUDY_NAME = 'nbeats_hpo_v2'
 STORAGE = 'sqlite:///nbeats_optuna.db'
 PLOTS_DIR = 'plots'
 REPORTS_DIR = 'reports'

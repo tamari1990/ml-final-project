@@ -1,94 +1,114 @@
 {
   "best_generic": {
-    "trial": 23,
+    "trial": 9,
     "config": {
       "architecture": "generic",
-      "n_stacks": 2,
-      "n_blocks": 2,
+      "n_stacks": 1,
+      "n_blocks": 4,
       "layer_size": 256,
       "n_fc_layers": 4,
       "lookback_multiplier": 4,
-      "loss": "smape",
+      "loss": "asym_wmae",
       "batch_size": 256,
       "optimizer": "adam",
-      "learning_rate": 0.0007279854007274201,
-      "weight_decay": 3.822799078402829e-06,
-      "dropout": 0.19094568604860213,
-      "share_weights": false,
-      "trend_degree": 3
+      "learning_rate": 0.002219252774591176,
+      "weight_decay": 0.0065557924195081855,
+      "dropout": 0.008826310253950498,
+      "share_weights": true,
+      "trend_degree": 3,
+      "holiday_boost": 7.746881876589519
     },
-    "cv_mean_wmae": 1911.095445291105,
-    "local_test_wmae_overall": 2161.25310772743,
-    "local_test_wmae_holiday": 3134.430956442924,
-    "local_test_wmae_non_holiday": 1756.1259226699472,
+    "cv_mean_wmae": 1950.0099441651328,
+    "local_test_wmae_overall": 2231.0021542282902,
+    "local_test_wmae_holiday": 3295.6865573252644,
+    "local_test_wmae_non_holiday": 1787.7814255910705,
     "local_test_wmae_by_type": {
-      "A": 2495.684571692365,
-      "B": 2003.3678912107828,
-      "C": 910.3641942846579
+      "A": 2577.7149894387835,
+      "B": 2064.1011853353302,
+      "C": 947.7997056554763
     }
   },
   "best_interpretable": {
-    "trial": 4,
+    "trial": 27,
     "config": {
       "architecture": "interpretable",
-      "n_blocks": 2,
-      "layer_size": 512,
-      "n_fc_layers": 5,
+      "n_stacks": 2,
+      "n_blocks": 3,
+      "layer_size": 256,
+      "n_fc_layers": 4,
       "lookback_multiplier": 4,
-      "loss": "mae",
-      "batch_size": 1024,
+      "loss": "asym_wmae",
+      "batch_size": 256,
       "optimizer": "adam",
-      "learning_rate": 0.0010157001316706408,
-      "weight_decay": 5.973412665154223e-06,
-      "dropout": 0.18797923060380148,
-      "share_weights": true,
-      "trend_degree": 4
+      "learning_rate": 0.003056332063011563,
+      "weight_decay": 5.059347013584101e-06,
+      "dropout": 0.21761246384503263,
+      "share_weights": false,
+      "trend_degree": 3,
+      "holiday_boost": 1.8843186053689225
     },
-    "cv_mean_wmae": 1902.3813188070403,
-    "local_test_wmae_overall": 2286.5106544054365,
-    "local_test_wmae_holiday": 3352.3521997380194,
-    "local_test_wmae_non_holiday": 1842.8082154855151,
+    "cv_mean_wmae": 1891.031527357804,
+    "local_test_wmae_overall": 2301.3562994603217,
+    "local_test_wmae_holiday": 3530.205174264834,
+    "local_test_wmae_non_holiday": 1789.7950404697779,
     "local_test_wmae_by_type": {
-      "A": 2646.1527168860102,
-      "B": 2113.3346235037384,
-      "C": 955.6731296576778
+      "A": 2656.508330639829,
+      "B": 2139.9500207355813,
+      "C": 946.4572182774912
     }
+  },
+  "best_mixed_informational": {
+    "trial": 87,
+    "config": {
+      "architecture": "mixed",
+      "n_stacks": 3,
+      "n_blocks": 4,
+      "layer_size": 256,
+      "n_fc_layers": 4,
+      "lookback_multiplier": 4,
+      "loss": "wmae",
+      "batch_size": 512,
+      "optimizer": "adam",
+      "learning_rate": 0.0009731127388799163,
+      "weight_decay": 0.0014853730964140069,
+      "dropout": 0.0647428897640397,
+      "share_weights": false,
+      "trend_degree": 4,
+      "holiday_boost": 1.3229194513173548
+    },
+    "cv_mean_wmae": 1854.89049775565
   },
   "ensemble_evaluable": {
     "multipliers": [
-      2,
-      3,
       4,
       5,
       6
     ],
-    "n_members": 10,
-    "local_test_wmae_overall": 2331.7082837341713,
-    "local_test_wmae_holiday": 3502.224341115606,
-    "local_test_wmae_non_holiday": 1843.9441737946688,
+    "n_members": 6,
+    "local_test_wmae_overall": 2292.108670589741,
+    "local_test_wmae_holiday": 3307.5514579677824,
+    "local_test_wmae_non_holiday": 1868.9649262074834,
     "local_test_wmae_by_type": {
-      "A": 2675.318691442589,
-      "B": 2198.6789984867773,
-      "C": 908.2225128541684
+      "A": 2646.791802746419,
+      "B": 2129.712074276612,
+      "C": 928.685840160176
+    },
+    "holiday_calibration": {
+      "correction_factors": {
+        "A": 1.0137347315623393,
+        "B": 1.0281515030952812,
+        "C": 0.9844067640757006
+      },
+      "local_test_wmae_overall": 2299.283337117645,
+      "local_test_wmae_holiday": 3331.943591312403,
+      "local_test_wmae_non_holiday": 1868.9649262074834,
+      "local_test_wmae_by_type": {
+        "A": 2654.489718181312,
+        "B": 2138.6001444959766,
+        "C": 925.6001628447531
+      }
     }
   },
-  "production_ensemble": {
-    "multipliers": [
-      2,
-      3,
-      4,
-      5,
-      6,
-      7
-    ],
-    "base_config": "best_generic (trial 23)"
-  },
-  "hpo_search": {
-    "trials_requested": 80,
-    "trials_attempted": 30,
-    "trials_completed": 17,
-    "trials_pruned": 10,
-    "status": "paused, resumable from nbeats_optuna.db"
-  },
-  "source": "hybrid run: single fits + evaluable ensemble on Colab T4 GPU (nbeats_colab_finalize.py); production ensemble also completed on Colab"
+  "production_ensemble": "SKIPPED (time-constrained run -- production tier trains on full history for Kaggle submission only, reports no WMAE, not used in this comparison; can be run later with run_nbeats_finalize.py if needed)",
+  "note": "Reconstructed from MLflow-logged metrics after the production ensemble tier (unneeded for this report) was stopped early to save time; all reported WMAE numbers come from real completed training runs, not re-derived or estimated."
 }
